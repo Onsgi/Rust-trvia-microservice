@@ -38,6 +38,7 @@ struct RoomState {
 
 #[derive(Deserialize)]
 struct OpenTdbResponse {
+    response_code: u32,
     results: Vec<OpenTdbQuestion>,
 }
 
@@ -51,25 +52,47 @@ struct OpenTdbQuestion {
 async fn fetch_question() -> (String, String, Vec<String>) {
     println!("\n[OpenTDB] Fetching new question...");
 
-    let url = "https://opentdb.com/api.php?amount=10&type=multiple";
+    let url = "https://opentdb.com/api.php?amount=1&type=multiple";
 
-    let resp: OpenTdbResponse = reqwest::get(url)
-        .await
-        .expect("failed to fetch question")
-        .json()
-        .await
-        .expect("failed to parse question");
+    for _ in 0..3 {
+        let resp = reqwest::get(url).await;
+        if resp.is_err() {
+            eprintln!("[OpenTDB] Request failed: {:?}", resp.err().unwrap());
+            continue;
+        }
+        let resp = resp.unwrap();
+        if !resp.status().is_success() {
+            eprintln!("[OpenTDB] HTTP error: {}", resp.status());
+            continue;
+        }
+        let full_resp: Result<OpenTdbResponse, _> = resp.json().await;
+        if full_resp.is_err() {
+            eprintln!("[OpenTDB] JSON parse error: {:?}", full_resp.err().unwrap());
+            continue;
+        }
+        let full_resp = full_resp.unwrap();
+        if full_resp.response_code != 0 || full_resp.results.is_empty() {
+            eprintln!("[OpenTDB] API error, response_code: {}, results len: {}", full_resp.response_code, full_resp.results.len());
+            continue;
+        }
+        let q = &full_resp.results[0];
 
-    let q = &resp.results[0];
+        println!("[OpenTDB] Question: {}", q.question);
+        println!("[OpenTDB] Correct answer: {}", q.correct_answer);
+        println!("[OpenTDB] Incorrect answers: {:?}", q.incorrect_answers);
 
-    println!("[OpenTDB] Question: {}", q.question);
-    println!("[OpenTDB] Correct answer: {}", q.correct_answer);
-    println!("[OpenTDB] Incorrect answers: {:?}", q.incorrect_answers);
+        let mut answers = q.incorrect_answers.clone();
+        answers.push(q.correct_answer.clone());
 
-    let mut answers = q.incorrect_answers.clone();
-    answers.push(q.correct_answer.clone());
+        return (q.question.clone(), q.correct_answer.clone(), answers);
+    }
 
-    (q.question.clone(), q.correct_answer.clone(), answers)
+    // Fallback if all retries fail
+    eprintln!("[OpenTDB] All retries failed, using fallback question");
+    let question = "What is the capital of France?";
+    let correct = "Paris";
+    let answers = vec!["London".to_string(), "Berlin".to_string(), "Madrid".to_string(), correct.to_string()];
+    (question.to_string(), correct.to_string(), answers)
 }
 
 async fn handle_client(stream: TcpStream, rooms: Rooms) {
