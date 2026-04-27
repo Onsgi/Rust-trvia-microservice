@@ -51,7 +51,7 @@ struct OpenTdbQuestion {
 async fn fetch_question() -> (String, String, Vec<String>) {
     println!("\n[OpenTDB] Fetching new question...");
 
-    let url = "https://opentdb.com/api.php?amount=1&type=multiple";
+    let url = "https://opentdb.com/api.php?amount=10&type=multiple";
 
     let resp: OpenTdbResponse = reqwest::get(url)
         .await
